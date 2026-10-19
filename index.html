@@ -903,6 +903,7 @@
     message: "",       // để trống = dùng lời chúc có sẵn
     song: "cho-chut-dk.mp3", // "Chờ chút" (CongB), đoạn điệp khúc 0:47–2:21; để trống = nhạc tự tạo
     songStart: 0,      // giây bắt đầu phát (để nhảy thẳng vào điệp khúc)
+    mvUrl: "mv.html",  // mũi tên trong thư mở MV khung ngang; để trống = dùng hoạt cảnh cũ
     editor: false      // true = hiện nút "Viết thiệp" (chỉ đổi nội dung trên máy người xem)
   };
 
@@ -2154,7 +2155,7 @@
     cancelAnimationFrame(sceneRaf);
     stopDay();
   }
-  $("btnScene").addEventListener("click", showScene);
+  $("btnScene").addEventListener("click", () => { if (CONFIG.mvUrl) location.href = CONFIG.mvUrl; else showScene(); });
   $("btnBack").addEventListener("click", showCard);
   $("btnReplay").addEventListener("click", playScene);
 
