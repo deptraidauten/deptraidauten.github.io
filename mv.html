@@ -1064,6 +1064,21 @@
       ])
     : Promise.resolve();
   fontsReady.then(() => { fit(); needsPaint = true; requestAnimationFrame(loop); });
+
+  // Dùng khi xuất video: vẽ đúng khung hình ở thời điểm t với độ rộng px cho trước
+  window.__mv = {
+    ready: fontsReady,
+    duration: DURATION,
+    exportScale(px) {
+      state = "export";
+      scale = px / W;
+      cv.width = Math.round(W * scale); cv.height = Math.round(H * scale);
+      bgA = mk(); drawFacadeA(bgA[1]);
+      bgC = mk(); drawFacadeC(bgC[1]);
+      bufL = mk(); bufR = mk();
+    },
+    render
+  };
 })();
 </script>
 </body>
