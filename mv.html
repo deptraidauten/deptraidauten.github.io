@@ -105,7 +105,7 @@
      Khung logic 1600×900; mọi thứ vẽ theo thời gian t (giây) của bài hát.
      ========================================================= */
   const W = 1600, H = 900, DURATION = 94;
-  const POSTER_T = 25.2;
+  const POSTER_T = 26;
   const reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   const cv = document.getElementById("mv");
@@ -142,6 +142,48 @@
     const g = c.createRadialGradient(x, y, 0, x, y, r);
     g.addColorStop(0, css(rgb(color), a)); g.addColorStop(1, css(rgb(color), 0));
     c.fillStyle = g; c.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+
+  /* ---------- tranh vẽ tay: nhân vật cắt từ ảnh mẫu + tranh hồ Gươm ---------- */
+  const IMG = {};
+  const imgReady = Promise.all(["girl-front", "girl-side", "boy-front", "boy-side", "hanoi-lake"].map((k) => new Promise((res) => {
+    const im = new Image();
+    im.onload = () => { IMG[k] = im; res(); };
+    im.onerror = () => res();
+    im.src = "sprites/" + k + (k === "hanoi-lake" ? ".jpg" : ".png");
+  })));
+  // (x, y): điểm giữa hai bàn chân; h: chiều cao; face: 1 nhìn phải, -1 nhìn trái, 0 nhìn thẳng
+  function person(c, who, x, y, h, face, t, walking) {
+    const im = IMG[who + (face ? "-side" : "-front")];
+    if (!im) return;
+    const w = (h * im.width) / im.height;
+    const bob = walking ? Math.abs(Math.sin(t * 7)) * h * 0.016 : 0;
+    const breath = walking ? 1 : 1 + Math.sin(t * 2.2 + (who === "boy" ? 1.3 : 0)) * 0.006;
+    c.save();
+    c.fillStyle = "rgba(20,10,30,0.3)";
+    c.beginPath(); c.ellipse(x, y - 2, w * 0.45, h * 0.022, 0, 0, Math.PI * 2); c.fill();
+    c.translate(x, y - bob);
+    if (walking) c.rotate(Math.sin(t * 7) * 0.012);
+    // dáng nghiêng gốc: cô gái nhìn sang phải, chàng trai nhìn sang trái
+    const native = who === "boy" ? -1 : 1;
+    if (face && face !== native) c.scale(-1, 1);
+    c.scale(1, breath);
+    c.drawImage(im, -w / 2, -h, w, h);
+    c.restore();
+  }
+  function lakePainting(c, y0, z) {
+    const im = IMG["hanoi-lake"];
+    if (!im) { c.fillStyle = "#2B3A55"; c.fillRect(0, 0, W, H); return; }
+    const s0 = (W / im.width) * z;
+    c.drawImage(im, (W - im.width * s0) / 2, -y0 * s0, im.width * s0, im.height * s0);
+  }
+  let grain = null;
+  function makeGrain() {
+    const g = document.createElement("canvas"); g.width = g.height = 256;
+    const x = g.getContext("2d"), d = x.createImageData(256, 256);
+    for (let i = 0; i < 256 * 256; i++) { const v = 128 + (R(i, 77) - 0.5) * 110; d.data[i * 4] = d.data[i * 4 + 1] = d.data[i * 4 + 2] = v; d.data[i * 4 + 3] = 255; }
+    x.putImageData(d, 0, 0);
+    return g;
   }
 
   /* ---------- kích thước & bộ đệm ---------- */
@@ -621,16 +663,8 @@
     }
     // xe đạp dựng
     if (st.bikeParked != null) bike(c, st.bikeParked, 790, 4.4, t, false, null);
-    // nhân vật
-    const actors = [];
-    if (st.boy) actors.push(["boy", st.boy]);
-    if (st.girl) actors.push(["girl", st.girl]);
-    actors.sort((a, b) => (a[1].z || 0) - (b[1].z || 0));
-    for (const [who, o] of actors) {
-      if (who === "boy") boy(c, o.x, o.y || 790, o.s || 6.4, Object.assign({ t }, o));
-      else if (o.ride) bike(c, o.x, o.y || 800, 4.6, t, true, Object.assign({ t }, o));
-      else girl(c, o.x, o.y || 790, o.s || 6, Object.assign({ t }, o));
-    }
+    // nhân vật (ảnh vẽ tay)
+    if (st.people) for (const p of st.people) person(c, p.who, p.x, p.y || 792, p.h || (p.who === "boy" ? 338 : 318), p.face || 0, t, p.walking);
     if (st.cat) cat(c, st.cat.x, 806, 4, t, st.cat.walk);
     // tim bay
     if (st.hearts) for (const h of st.hearts) heart(c, h.x, h.y, h.s, h.c);
@@ -760,8 +794,7 @@
       c.fillStyle = "rgba(244,247,255,0.85)"; c.fillRect(0, 770, W, 50);
     }
     // cô gái
-    const o = Object.assign({ t }, st.girl || {});
-    girl(c, o.x || 820, 790, 6, o);
+    person(c, "girl", 820, 792, 330, 0, t, false);
     c.restore();
     if (S.fall) falling(c, t, season === "winter" ? 110 : 50, S.fall, season === "winter" ? 3.4 : 5, season === "winter" ? 900 : 500, season === "winter" ? 55 : 70);
   }
@@ -835,50 +868,37 @@
     return out;
   }
 
-  // 0–38s: phố cũ, mưa, mái hiên, nón lá
+  // 0–8s: lia máy trên tranh hồ Gươm đêm mưa, từ phố cao tầng xuống mặt đường
+  function sceneLakeOpen(c, t) {
+    const im = IMG["hanoi-lake"];
+    const maxY = im ? im.height - (H * im.width) / W : 0;
+    lakePainting(c, lerp(0, maxY, eIO(clamp(t / 8))), 1);
+    rain(c, t, 0.4);
+  }
+
+  // 8–38s: phố cũ, trú mưa dưới mái hiên, nhìn nhau
   function sceneIntro(c, t) {
-    const rainAmt = seg(t, 10, 13) * (1 - seg(t, 30.5, 33.5));
+    const rainAmt = 1 - seg(t, 30.5, 33.5);
     const st = {
-      sky: { rain: rainAmt * 0.95, sunset: seg(t, 33, 38) * 0.4 },
-      rain: rainAmt, wet: Math.max(rainAmt, 1 - seg(t, 33, 40)) * (t > 10 ? 1 : 0),
-      rainbow: pulse(t, 32.5, 40) * 1, pan: Math.sin(t * 0.15) * 10,
-      zoom: lerp(lerp(1.08, 1.34, eIO(seg(t, 11, 16))), 1.12, eIO(seg(t, 33, 38))),
-      cx: lerp(lerp(800, 900, eIO(seg(t, 11, 16))), 820, eIO(seg(t, 33, 38))), cy: 700
+      sky: { rain: rainAmt * 0.95, sunset: seg(t, 33, 38) * 0.45 },
+      rain: rainAmt, wet: 1 - seg(t, 33, 40) * 0.5,
+      rainbow: pulse(t, 32.5, 40), pan: Math.sin(t * 0.15) * 8,
+      zoom: lerp(1.1, 1.3, eIO(seg(t, 8, 14))), cx: 880, cy: 700, people: []
     };
-    // cô gái
-    if (t < 12.5) {
-      const k = eOut(seg(t, 0.5, 12.5));
-      st.girl = { ride: true, x: lerp(-260, 690, k), look: 0, smile: t < 10, z: 1, wind: 1.2 };
-    } else if (t < 33.5) {
-      st.bikeParked = 690;
-      const wx = t < 14.2 ? lerp(700, 830, eIO(seg(t, 12.5, 14.2))) : 830;
-      st.girl = { x: wx, walk: t < 14.2 ? t * 12 : 0, z: 1 };
-      const g = st.girl;
-      if (t > 14.2 && t < 18) g.armR = -2.4 * pulse(t, 14.5, 16.5), g.closed = t > 15 && t < 15.3; // phủi mưa trên tóc
-      if (t >= 22 && t < 23.6) g.look = 1;
-      if (t >= 25 && t < 26.2) g.look = 1, g.blush = 0.6;
-      if (t >= 26.2 && t < 29) g.down = true, g.blush = 1;
-      if (t >= 29) g.look = 0.6, g.blush = 0.7, g.smile = true;
-      if (t >= 30.6) { g.hat = true; g.armR = 0; }
-      if (t >= 32) { const k2 = eIO(seg(t, 32, 33.5)); g.x = lerp(830, 700, k2); g.walk = t * 12; }
-    } else {
-      const k = eIO(seg(t, 33.5, 38.5));
-      st.girl = { ride: true, x: lerp(700, 1900, k), hat: true, smile: true, z: 1 };
+    let gx = 790, gface = 0, gwalk = false;
+    if (t < 13) { gx = lerp(-160, 790, eOut(seg(t, 8.3, 13))); gface = 1; gwalk = t < 12.6; }
+    else if (t < 33.6) {
+      if (t >= 21.5 && t < 23) gface = 1;      // liếc sang anh
+      if (t >= 24.5 && t < 28.2) gface = 1;    // nhìn nhau
+    } else { gx = lerp(790, -220, eIO(seg(t, 33.8, 38.6))); gface = -1; gwalk = true; }
+    st.people.push({ who: "girl", x: gx, face: gface, walking: gwalk });
+    if (t >= 15.5) {
+      let bx = 1010, bface = 0, bwalk = false;
+      if (t < 20) { bx = lerp(1760, 1010, eOut(seg(t, 15.5, 20))); bface = -1; bwalk = t < 19.6; }
+      else if ((t >= 23 && t < 28.2) || t >= 33.4) bface = -1;
+      st.people.push({ who: "boy", x: bx, face: bface, walking: bwalk });
     }
-    // chàng trai
-    if (t >= 17.5) {
-      const k = eOut(seg(t, 17.5, 20.5));
-      const b = st.boy = { x: lerp(1760, 990, k), walk: t < 20.5 ? t * 16 : 0, hatOver: t < 21.2, z: 0 };
-      if (t >= 21.2) b.holdHat = true, b.armR = 0.15;
-      if (t >= 23.6 && t < 25) b.look = -1;
-      if (t >= 25 && t < 26.2) b.look = -1, b.blush = 0.6;
-      if (t >= 26.2 && t < 28.5) b.down = true, b.blush = 1, b.look = 0.4;
-      if (t >= 28.5 && t < 30.6) { b.look = -1; b.blush = 0.6; b.armL = 1.15 * eOut(seg(t, 28.5, 29.6)); b.holdHat = false; b.holdHatL = true; }
-      if (t >= 30.6) { b.holdHat = false; b.holdHatL = false; b.armL = 0; b.armR = 0; b.look = -0.6; b.smile = true; b.blush = 0.8; }
-      if (t >= 33.5) { b.look = 1; b.armR = -2.6 + Math.sin(t * 9) * 0.35; }
-      st.hearts = floatingHearts(t, 34.5, 990, 520, 7);
-    }
-    // mèo
+    st.hearts = floatingHearts(t, 24.8, 900, 470, 8).concat(floatingHearts(t, 34.4, 1010, 440, 6));
     if (t >= 25.5 && t < 34) {
       const k = t < 28 ? seg(t, 25.5, 28) : t < 29.2 ? 1 : 1 + seg(t, 29.2, 34);
       st.cat = { x: k <= 1 ? lerp(380, 900, k) : lerp(900, 1700, k - 1), walk: !(t >= 28 && t < 29.2) };
@@ -910,7 +930,7 @@
     Rr.setTransform(scale, 0, 0, scale, 0, 0);
     streetScene(Rr, t, {
       sky: vnSky, rain: idx === 0 ? 0.45 : 0, wet: idx === 0 ? 0.8 : 0, moon: idx === 3 ? 1 : 0,
-      phuong: idx === 1 ? 1 : 0, petals: idx === 2 ? 0.8 : 0, boy: bO, zoom: 1.22, cx: 900, cy: 720
+      phuong: idx === 1 ? 1 : 0, petals: idx === 2 ? 0.8 : 0, people: [{ who: "boy", x: 900 }], zoom: 1.22, cx: 900, cy: 720
     });
     // ghép hai nửa
     const half = W / 2;
@@ -931,59 +951,84 @@
     }
   }
 
-  // 72–94s: một năm sau, gặp lại dưới mái hiên
+  // 72–84s: một năm sau, anh vẫn đợi dưới mái hiên, cô trở về
   function sceneReunion(c, t) {
-    const rainAmt = 0.55 * (1 - seg(t, 77, 80));
+    const rainAmt = 0.55 * (1 - seg(t, 80, 83));
     const st = {
-      sky: { rain: rainAmt, sunset: seg(t, 79, 86) * 0.85 },
-      rain: rainAmt, wet: 1 - seg(t, 80, 90) * 0.6,
-      rainbow: pulse(t, 79.5, 92) * 0.9,
-      petals: seg(t, 80, 82),
-      zoom: lerp(lerp(1.12, 1.36, eIO(seg(t, 77, 81))), 1.04, eIO(seg(t, 85, 92))), cx: lerp(820, 905, eIO(seg(t, 77, 81))), cy: 700
+      sky: { rain: rainAmt, sunset: seg(t, 80, 84) * 0.7 },
+      rain: rainAmt, wet: 1, rainbow: pulse(t, 80.5, 92) * 0.8,
+      zoom: lerp(1.12, 1.32, eIO(seg(t, 76, 80))), cx: 880, cy: 700, people: []
     };
-    const b = st.boy = { x: 960, z: 0, look: -0.5 };
-    if (t < 74.5) b.look = Math.sin(t * 1.4) > 0 ? -1 : 0.3;
-    if (t >= 78) b.look = -1;
-    if (t >= 80) b.blush = 0.8, b.smile = true;
-    if (t < 79.2) {
-      const k = eOut(seg(t, 73.5, 79.2));
-      st.girl = { ride: true, x: lerp(-260, 690, k), hat: true, smile: true, z: 1 };
-    } else {
-      st.bikeParked = 690;
-      const g = st.girl = { x: lerp(700, 850, eIO(seg(t, 79.2, 80.8))), walk: t < 80.8 ? t * 12 : 0, hat: true, look: 1, smile: true, z: 1, blush: 0.6 };
-      if (t >= 81.2 && t < 82.6) { g.armR = -2.3 * eOut(seg(t, 81.2, 82)); g.armL = -2.3 * eOut(seg(t, 81.2, 82)); }
-      if (t >= 82.6) { g.hat = false; g.armR = 0; g.armL = 0; b.hat = true; g.closed = t < 84; b.closed = true; }
-    }
-    if (t >= 82.6) st.hearts = floatingHearts(t, 82.8, 905, 560, 26);
-    if (t >= 83.4) st.bigHeart = t < 84.4 ? eBack(seg(t, 83.4, 84.4)) : 1 + 0.08 * Math.max(0, Math.sin(t * 6));
+    const bface = (t >= 73.5 && t < 75) || t >= 77.6 ? -1 : 0;
+    st.people.push({ who: "boy", x: 1000, face: bface });
+    if (t >= 76.5) st.people.push({ who: "girl", x: lerp(-160, 820, eOut(seg(t, 76.5, 80.6))), face: 1, walking: t < 80.3 });
+    if (t >= 81.2) st.hearts = floatingHearts(t, 81.3, 910, 470, 9);
+    if (t >= 82) st.bigHeart = t < 83 ? eBack(seg(t, 82, 83)) : 1 + 0.08 * Math.max(0, Math.sin(t * 6));
     streetScene(c, t, st);
-    // dòng kết
+  }
+
+  // 84–94s: cận cảnh hai người bên hồ Gươm, dòng kết
+  function sceneLakeEnd(c, t) {
+    const k = seg(t, 84, 94);
+    lakePainting(c, 690, lerp(1.14, 1.02, eIO(k)));
+    const g = c.createLinearGradient(0, 560, 0, H);
+    g.addColorStop(0, "rgba(20,14,30,0)"); g.addColorStop(1, "rgba(20,14,30,0.78)");
+    c.fillStyle = g; c.fillRect(0, 560, W, H - 560);
+    c.globalCompositeOperation = "lighter"; glow(c, 815, 560, 460, "#FFB347", 0.16); c.globalCompositeOperation = "source-over";
+    // vỉa hè đá ướt ven hồ dưới chân hai người
+    const pg = c.createLinearGradient(0, 812, 0, H);
+    pg.addColorStop(0, "#3A3442"); pg.addColorStop(1, "#1C1724");
+    c.fillStyle = pg;
+    c.beginPath(); c.moveTo(0, 836); c.quadraticCurveTo(W / 2, 806, W, 836); c.lineTo(W, H); c.lineTo(0, H); c.closePath(); c.fill();
+    c.fillStyle = "#5A5263"; c.beginPath(); c.moveTo(0, 836); c.quadraticCurveTo(W / 2, 806, W, 836); c.lineTo(W, 846); c.quadraticCurveTo(W / 2, 816, 0, 846); c.closePath(); c.fill();
+    c.globalCompositeOperation = "lighter";
+    for (let i = 0; i < 9; i++) glow(c, 120 + i * 170, 872 + R(i, 131) * 18, 46, "#FFB347", 0.16);
+    c.globalCompositeOperation = "source-over";
+    c.strokeStyle = "rgba(255,255,255,0.08)"; c.lineWidth = 1.5;
+    for (let x = -40; x < W; x += 110) line(c, x, 900, x + 70, 840);
+    const turned = t >= 86.2 ? 0 : 1;
+    person(c, "girl", 690, 878, 545, turned, t, false);
+    person(c, "boy", 940, 878, 585, -turned, t, false);
+    for (const h of floatingHearts(t, 84.4, 815, 420, 24)) heart(c, h.x, h.y, h.s * 1.3, h.c);
+    falling(c, t, 40, ["#F3F5D8", "#E6EFC4", "#FFFFFF"], 4, 300, 50);
+    rain(c, t, 0.35 * (1 - seg(t, 86, 90)));
+    endTitle(c, t);
+  }
+
+  function endTitle(c, t) {
     const a = seg(t, 87, 88.6);
-    if (a > 0) {
-      c.save(); c.globalAlpha = a;
-      const g = c.createLinearGradient(0, 120, 0, 260);
-      g.addColorStop(0, "#FFF3C4"); g.addColorStop(0.5, "#F2B84B"); g.addColorStop(1, "#C8901E");
-      const sh = c.createLinearGradient(0, 0, 0, 440); sh.addColorStop(0, "rgba(20,8,24,0.88)"); sh.addColorStop(0.75, "rgba(20,8,24,0.7)"); sh.addColorStop(1, "rgba(20,8,24,0)"); c.fillStyle = sh; c.fillRect(0, 0, W, 470);
-      c.textAlign = "center"; c.textBaseline = "middle";
-      c.font = '700 120px "Dancing Script", cursive'; c.fillStyle = g; c.fillText("20 · 10", W / 2, 170);
-      c.font = 'italic 500 46px "Lora", Georgia, serif'; c.fillStyle = "#FFF4F8"; c.fillText("Gửi Người đẹp", W / 2, 272);
-      c.font = '700 26px "Be Vietnam Pro", system-ui, sans-serif'; c.fillStyle = "rgba(255,244,248,0.85)"; c.fillText("— Trai đẹp giấu tên —", W / 2, 330);
-      c.restore();
-    }
+    if (a <= 0) return;
+    c.save(); c.globalAlpha = a;
+    const sh = c.createLinearGradient(0, 0, 0, 440);
+    sh.addColorStop(0, "rgba(20,8,24,0.85)"); sh.addColorStop(0.75, "rgba(20,8,24,0.55)"); sh.addColorStop(1, "rgba(20,8,24,0)");
+    c.fillStyle = sh; c.fillRect(0, 0, W, 440);
+    const g = c.createLinearGradient(0, 110, 0, 230);
+    g.addColorStop(0, "#FFF3C4"); g.addColorStop(0.5, "#F2B84B"); g.addColorStop(1, "#C8901E");
+    c.textAlign = "center"; c.textBaseline = "middle";
+    c.font = '700 120px "Dancing Script", cursive'; c.fillStyle = g; c.fillText("20 · 10", W / 2, 160);
+    c.font = 'italic 500 46px "Lora", Georgia, serif'; c.fillStyle = "#FFF4F8"; c.fillText("Gửi Người đẹp", W / 2, 262);
+    c.font = '700 26px "Be Vietnam Pro", system-ui, sans-serif'; c.fillStyle = "rgba(255,244,248,0.85)"; c.fillText("— Trai đẹp giấu tên —", W / 2, 320);
+    c.restore();
   }
 
   function render(t) {
     ctx.setTransform(scale, 0, 0, scale, 0, 0);
     ctx.clearRect(0, 0, W, H);
-    if (t < 38) sceneIntro(ctx, t);
+    if (t < 8) sceneLakeOpen(ctx, t);
+    else if (t < 38) sceneIntro(ctx, t);
     else if (t < 45) flight(ctx, t - 38, "takeoff");
     else if (t < 66) sceneSplit(ctx, t);
     else if (t < 72) flight(ctx, t - 66, "landing");
-    else sceneReunion(ctx, t);
+    else if (t < 84) sceneReunion(ctx, t);
+    else sceneLakeEnd(ctx, t);
     vignette(ctx, 0.5);
+    // vân giấy phủ toàn khung để nhân vật màu nước hoà với bối cảnh
+    if (!grain) grain = makeGrain();
+    ctx.save(); ctx.globalCompositeOperation = "overlay"; ctx.globalAlpha = 0.09;
+    ctx.fillStyle = ctx.createPattern(grain, "repeat"); ctx.fillRect(0, 0, W, H); ctx.restore();
     // chuyển cảnh: tối nhẹ qua mỗi lần cắt
     let a = Math.max(1 - t / 0.9, seg(t, 92.6, 94));
-    for (const cut of [38, 45, 66, 72]) a = Math.max(a, 1 - Math.abs(t - cut) / 0.45);
+    for (const cut of [8, 38, 45, 66, 72, 84]) a = Math.max(a, 1 - Math.abs(t - cut) / 0.45);
     if (a > 0) { ctx.fillStyle = `rgba(10,4,16,${clamp(a)})`; ctx.fillRect(0, 0, W, H); }
   }
 
@@ -1063,11 +1108,11 @@
         new Promise((r) => setTimeout(r, 2500))
       ])
     : Promise.resolve();
-  fontsReady.then(() => { fit(); needsPaint = true; requestAnimationFrame(loop); });
+  Promise.all([fontsReady, imgReady]).then(() => { fit(); needsPaint = true; requestAnimationFrame(loop); });
 
   // Dùng khi xuất video: vẽ đúng khung hình ở thời điểm t với độ rộng px cho trước
   window.__mv = {
-    ready: fontsReady,
+    ready: Promise.all([fontsReady, imgReady]),
     duration: DURATION,
     exportScale(px) {
       state = "export";
