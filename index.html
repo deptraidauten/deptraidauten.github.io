@@ -17,7 +17,7 @@
 <title>Vườn Hoa 20/10</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600&family=Dancing+Script:wght@500;700&family=Lora:ital,wght@0,400;1,400;1,500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600&family=Dancing+Script:wght@500;700&family=Lora:ital,wght@0,400;1,400;1,500;1,600&display=swap">
 <style>
   /* Thiết kế một giao diện duy nhất (vườn đêm + giấy thiệp), không đổi theo theme */
   :root {
@@ -240,7 +240,13 @@
     color: var(--rose-deep);
     text-wrap: balance;
   }
-  .wish { position: relative; margin: 0; font: italic 400 17px/1.7 var(--f-serif); color: var(--ink); }
+  .wish {
+    position: relative; margin: 6px 0;
+    font: italic 600 clamp(28px, 7.5vw, 40px)/1.3 var(--f-serif);
+    color: var(--rose-deep);
+    text-align: center; text-wrap: balance;
+    text-shadow: 0 1px 0 #FFFFFF, 0 0 18px rgba(232, 87, 126, 0.28);
+  }
   .wish .ghost { visibility: hidden; }
   .wish .typed { position: absolute; inset: 0; }
   .wish .typed::after { content: "▍"; color: var(--rose); animation: blink 1s steps(1) infinite; font-style: normal; }
@@ -899,11 +905,11 @@
     from: "Trai đẹp giấu tên",
     to: "",            // để trống = dùng tên mặc định của nhóm
     category: "crush",
-    scene: "crush",    // nhóm được xem cảnh "Một sợi chỉ đỏ" (bay sang Nhật); để trống = tắt
-    message: "",       // để trống = dùng lời chúc có sẵn
+    scene: "",         // nhóm được xem cảnh "Một sợi chỉ đỏ" (bay sang Nhật); để trống = tắt
+    message: "Chúc người đẹp 20/10 vui vẻ", // để trống = dùng lời chúc có sẵn
     song: "cho-chut-dk.mp3", // "Chờ chút" (CongB), đoạn điệp khúc 0:47–2:21; để trống = nhạc tự tạo
     songStart: 0,      // giây bắt đầu phát (để nhảy thẳng vào điệp khúc)
-    mvUrl: "mv.html",  // mũi tên trong thư mở MV khung ngang; để trống = dùng hoạt cảnh cũ
+    mvUrl: "",         // mũi tên trong thư mở MV khung ngang; để trống = không có
     editor: false      // true = hiện nút "Viết thiệp" (chỉ đổi nội dung trên máy người xem)
   };
 
@@ -2357,6 +2363,7 @@
 
   /* ---------- Khởi động ---------- */
   $("btnEdit").hidden = !CONFIG.editor;
+  $("btnNext").hidden = !!CONFIG.message; // chỉ một lời chúc cố định thì không cần nút đổi
   renderNames();
   layoutConstel();
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(layoutConstel);
